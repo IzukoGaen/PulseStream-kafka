@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>Live dashboard test</title></head>
+<body>
+  <h2>Request count</h2><pre id="request-count"></pre>
+  <h2>Status breakdown</h2><pre id="status-breakdown"></pre>
+  <h2>Active users</h2><pre id="active-users"></pre>
+  <h2>Top pages</h2><pre id="top-pages"></pre>
+
+  <script>
+    ["request-count", "status-breakdown", "active-users", "top-pages"].forEach((name) => {
+      const el = document.getElementById(name);
+      const ws = new WebSocket(`ws://${location.host}/ws/${name}`);
+      ws.onmessage = (event) => {
+        el.textContent = JSON.stringify(JSON.parse(event.data), null, 2);
+      };
+    });
+  </script>
+</body>
+</html>
