@@ -153,6 +153,7 @@ uvicorn main:app --reload --reload-exclude venv
 Open `http://localhost:8000/static/dashboard.html` — all four panels should
 move from "waiting for data" to live values within one or two 10-second
 windows.
+<img width="1871" height="941" alt="Screenshot 2026-09-23 191829" src="https://github.com/user-attachments/assets/8eac2722-8bfc-42ff-9144-2e4b1bf2f58e" />
 
 > **Note:** outbound connections to Confluent Cloud use port 9092
 > (SASL_SSL). Some corporate networks block this port — if the backend
