@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PulseStream — live traffic observability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0F14;
+    --surface: #11161D;
+    --surface-hi: #161C25;
+    --border: #232B36;
+    --text: #E7EBF0;
+    --text-muted: #8A94A3;
+    --text-faint: #5B6472;
+    --brand: #4F8FE0;
+    --brand-dim: rgba(79, 143, 224, 0.14);
+    --ok: #3FB97F;
+    --info: #4F8FE0;
+    --warn: #E0A83F;
+    --err: #E05D5D;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    min-height: 100%;
+  }
+
+  body {
+    padding: 20px 20px 40px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  h1, h2, .num, .label {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  a { color: var(--brand); }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    padding-bottom: 18px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .brand h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .brand .tagline {
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .status-cluster {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .dot.live { background: var(--ok); animation: pulse 1.8s ease-in-out infinite; }
+  .dot.reconnecting { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+  .dot.offline { background: var(--err); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot.live, .dot.reconnecting { animation: none; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(63, 185, 127, 0.45); }
+    50% { box-shadow: 0 0 0 5px rgba(63, 185, 127, 0); }
+  }
+
+  .status-text { display: flex; align-items: center; gap: 7px; }
+  .clock { color: var(--text-faint); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+
+  .hero-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .label {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .num {
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+
+  .num-sub {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin-top: 4px;
+  }
+
+  canvas#volumeChart {
+    width: 100%;
+    height: 110px;
+    display: block;
+  }
+
+  .empty-state {
+    color: var(--text-faint);
+    font-size: 13px;
+    padding: 10px 2px;
+  }
+
+  /* ---------- grid ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 20px;
+  }
+
+  .panel-title {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-bottom: 14px;
+  }
+
+  /* status breakdown bars */
+  .status-row {
+    display: grid;
+    grid-template-columns: 34px 1fr 46px;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    margin-bottom: 9px;
+  }
+
+  .status-row .code { color: var(--text-muted); font-weight: 500; }
+  .status-row .count { text-align: right; color: var(--text); }
+
+  .bar-track {
+    background: var(--surface-hi);
+    border-radius: 3px;
+    height: 8px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bar-fill { transition: none; }
+  }
+
+  .bar-fill.s2xx { background: var(--ok); }
+  .bar-fill.s3xx { background: var(--info); }
+  .bar-fill.s4xx { background: var(--warn); }
+  .bar-fill.s5xx { background: var(--err); }
+
+  .error-rate {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .error-rate .label { margin: 0; }
+  .error-rate .val { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 600; }
+  .error-rate .val.high { color: var(--err); }
+
+  /* active users panel */
+  .au-num-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  canvas#usersSpark {
+    width: 140px;
+    height: 46px;
+  }
+
+  /* top pages table */
+  .pages-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pages-table td { padding: 7px 0; vertical-align: middle; }
+  .pages-table .rank { color: var(--text-faint); width: 22px; }
+  .pages-table .path { color: var(--text); padding-right: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  .pages-table .bar-cell { width: 100%; }
+  .pages-table .hits { text-align: right; color: var(--text-muted); width: 44px; padding-left: 10px; }
+
+  .pages-track {
+    background: var(--surface-hi);
+    border-radius: 3px;
+    height: 7px;
+    overflow: hidden;
+  }
+  .pages-fill {
+    height: 100%;
+    background: var(--brand);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pages-fill { transition: none; }
+  }
+
+  .window-tag {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <h1>PulseStream</h1>
+      <span class="tagline">live traffic observability</span>
+    </div>
+    <div class="status-cluster">
+      <div class="status-text">
+        <span class="dot offline" id="statusDot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="num" id="reqNum">—</div>
+        <div class="num-sub" id="reqSub">requests in the last window</div>
+      </div>
+      <div class="label" id="reqWindowLabel"></div>
+    </div>
+    <canvas id="volumeChart"></canvas>
+    <div class="empty-state" id="reqEmpty">Waiting for the first window to land…</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-title">Status breakdown, current window</div>
+      <div id="statusRows">
+        <div class="empty-state">Waiting for status data…</div>
+      </div>
+      <div class="error-rate">
+        <div class="label">Error rate (4xx + 5xx)</div>
+        <div class="val" id="errorRateVal">—</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Active users, current window</div>
+      <div class="au-num-row">
+        <div>
+          <div class="num" id="usersNum">—</div>
+          <div class="num-sub">distinct users</div>
+        </div>
+        <canvas id="usersSpark"></canvas>
+      </div>
+      <div class="empty-state" id="usersEmpty">Waiting for the first window to land…</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Top pages, current window</div>
+    <table class="pages-table" id="pagesTable">
+      <tbody id="pagesBody"></tbody>
+    </table>
+    <div class="empty-state" id="pagesEmpty">Waiting for page hit data…</div>
+    <div class="window-tag" id="pagesWindowTag"></div>
+  </div>
+
+<script>
+(() => {
+  // ---------- config ----------
+  const STREAMS = ["request-count", "status-breakdown", "active-users", "top-pages"];
+  const RETRY_MS = 3000;
+  const MAX_HISTORY = 30;
+  // ?demo feeds synthetic windows through the same handlers, for screenshots
+  // and offline previews; without it the page only shows real websocket data.
+  const DEMO = new URLSearchParams(location.search).has("demo");
+
+  const connState = {};
+  STREAMS.forEach(s => connState[s] = "connecting");
+
+  // ---------- shared helpers ----------
+  function fmtClock(d) {
+    return d.toLocaleTimeString([], { hour12: false });
+  }
+
+  function animateNumber(el, from, to, duration = 400) {
+    if (from === to) { el.textContent = to; return; }
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const val = Math.round(from + (to - from) * eased);
+      el.textContent = val;
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  function windowLabel(windowEnd) {
+    const d = new Date(windowEnd);
+    if (isNaN(d.getTime())) return "";
+    return `window ending ${fmtClock(d)}`;
+  }
+
+  function updateOverallStatus() {
+    const values = Object.values(connState);
+    const dot = document.getElementById("statusDot");
+    const text = document.getElementById("statusText");
+    dot.classList.remove("live", "reconnecting", "offline");
+    if (values.every(v => v === "open")) {
+      dot.classList.add("live");
+      text.textContent = DEMO ? "Live · demo data" : "Live";
+    } else if (values.some(v => v === "open" || v === "connecting")) {
+      dot.classList.add("reconnecting");
+      text.textContent = "Reconnecting…";
+    } else {
+      dot.classList.add("offline");
+      text.textContent = "Offline — is the backend running on this network?";
+    }
+  }
+
+  const demoHandlers = {};
+
+  function connect(name, onMessage) {
+    if (DEMO) {
+      demoHandlers[name] = onMessage;
+      connState[name] = "open";
+      updateOverallStatus();
+      return;
+    }
+    connState[name] = "connecting";
+    updateOverallStatus();
+    let ws;
+    try {
+      ws = new WebSocket(`ws://${location.host}/ws/${name}`);
+    } catch (e) {
+      connState[name] = "closed";
+      updateOverallStatus();
+      setTimeout(() => connect(name, onMessage), RETRY_MS);
+      return;
+    }
+    ws.onopen = () => { connState[name] = "open"; updateOverallStatus(); };
+    ws.onclose = () => {
+      connState[name] = "closed";
+      updateOverallStatus();
+      setTimeout(() => connect(name, onMessage), RETRY_MS);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (event) => {
+      try { onMessage(JSON.parse(event.data)); }
+      catch (e) { /* ignore malformed payloads */ }
+    };
+  }
+
+  // clock, always ticking regardless of connection state
+  setInterval(() => {
+    document.getElementById("clock").textContent = fmtClock(new Date());
+  }, 1000);
+  document.getElementById("clock").textContent = fmtClock(new Date());
+
+  // ---------- request-count ----------
+  const reqHistory = [];
+  const volCanvas = document.getElementById("volumeChart");
+  const volCtx = volCanvas.getContext("2d");
+
+  function sizeCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return rect;
+  }
+
+  function drawVolumeChart() {
+    const rect = sizeCanvas(volCanvas);
+    volCtx.clearRect(0, 0, rect.width, rect.height);
+    if (reqHistory.length === 0) return;
+
+    const max = Math.max(...reqHistory.map(p => p.request_count), 1);
+    const barGap = 4;
+    const barW = (rect.width - barGap * (MAX_HISTORY - 1)) / MAX_HISTORY;
+    const baseline = rect.height - 2;
+
+    reqHistory.forEach((point, i) => {
+      const slot = MAX_HISTORY - reqHistory.length + i;
+      const x = slot * (barW + barGap);
+      const h = Math.max(2, (point.request_count / max) * (rect.height - 8));
+      const isLast = i === reqHistory.length - 1;
+      volCtx.fillStyle = isLast ? "#4F8FE0" : "rgba(79, 143, 224, 0.45)";
+      volCtx.beginPath();
+      const r = 2;
+      const y = baseline - h;
+      volCtx.moveTo(x, baseline);
+      volCtx.lineTo(x, y + r);
+      volCtx.arcTo(x, y, x + r, y, r);
+      volCtx.lineTo(x + barW - r, y);
+      volCtx.arcTo(x + barW, y, x + barW, y + r, r);
+      volCtx.lineTo(x + barW, baseline);
+      volCtx.closePath();
+      volCtx.fill();
+    });
+  }
+
+  connect("request-count", (row) => {
+    document.getElementById("reqEmpty").style.display = "none";
+    const prev = reqHistory.length ? reqHistory[reqHistory.length - 1].request_count : 0;
+    reqHistory.push(row);
+    if (reqHistory.length > MAX_HISTORY) reqHistory.shift();
+    animateNumber(document.getElementById("reqNum"), prev, row.request_count ?? 0);
+    document.getElementById("reqWindowLabel").textContent = windowLabel(row.window_end);
+    drawVolumeChart();
+  });
+
+  window.addEventListener("resize", drawVolumeChart);
+
+  // ---------- status-breakdown ----------
+  let statusWindowKey = null;
+  let statusMap = {};
+
+  function bucketOf(code) {
+    const n = String(code).trim()[0];
+    if (n === "2") return { key: "2xx", cls: "s2xx" };
+    if (n === "3") return { key: "3xx", cls: "s3xx" };
+    if (n === "4") return { key: "4xx", cls: "s4xx" };
+    if (n === "5") return { key: "5xx", cls: "s5xx" };
+    return { key: String(code), cls: "s4xx" };
+  }
+
+  function renderStatus() {
+    const container = document.getElementById("statusRows");
+    const order = ["2xx", "3xx", "4xx", "5xx"];
+    const entries = order.filter(k => statusMap[k] !== undefined);
+    if (entries.length === 0) return;
+
+    document.querySelector("#statusRows").previousElementSibling; // no-op, keeps structure stable
+    container.innerHTML = "";
+    const max = Math.max(...Object.values(statusMap), 1);
+    let total = 0, errors = 0;
+
+    order.forEach(code => {
+      const count = statusMap[code];
+      if (count === undefined) return;
+      total += count;
+      if (code === "4xx" || code === "5xx") errors += count;
+      const cls = "s" + code;
+      const row = document.createElement("div");
+      row.className = "status-row";
+      row.innerHTML = `
+        <span class="code">${code}</span>
+        <span class="bar-track"><span class="bar-fill ${cls}" style="width:${(count / max) * 100}%"></span></span>
+        <span class="count">${count}</span>
+      `;
+      container.appendChild(row);
+    });
+
+    const rateEl = document.getElementById("errorRateVal");
+    const rate = total > 0 ? (errors / total) * 100 : 0;
+    rateEl.textContent = `${rate.toFixed(1)}%`;
+    rateEl.classList.toggle("high", rate >= 10);
+  }
+
+  connect("status-breakdown", (row) => {
+    document.getElementById("statusRows").querySelector(".empty-state")?.remove();
+    if (row.window_start !== statusWindowKey) {
+      statusWindowKey = row.window_start;
+      statusMap = {};
+    }
+    const { key } = bucketOf(row.status);
+    statusMap[key] = (statusMap[key] || 0) + (row.status_count ?? 0);
+    renderStatus();
+  });
+
+  // ---------- active-users ----------
+  const usersHistory = [];
+  const sparkCanvas = document.getElementById("usersSpark");
+  const sparkCtx = sparkCanvas.getContext("2d");
+
+  function drawSpark() {
+    const rect = sizeCanvas(sparkCanvas);
+    sparkCtx.clearRect(0, 0, rect.width, rect.height);
+    if (usersHistory.length < 2) return;
+    const max = Math.max(...usersHistory, 1);
+    const min = Math.min(...usersHistory);
+    const range = Math.max(1, max - min);
+    const stepX = rect.width / (usersHistory.length - 1);
+
+    sparkCtx.beginPath();
+    usersHistory.forEach((v, i) => {
+      const x = i * stepX;
+      const y = rect.height - ((v - min) / range) * (rect.height - 4) - 2;
+      if (i === 0) sparkCtx.moveTo(x, y); else sparkCtx.lineTo(x, y);
+    });
+    sparkCtx.strokeStyle = "#4F8FE0";
+    sparkCtx.lineWidth = 2;
+    sparkCtx.lineJoin = "round";
+    sparkCtx.stroke();
+  }
+
+  connect("active-users", (row) => {
+    document.getElementById("usersEmpty").style.display = "none";
+    const prev = usersHistory.length ? usersHistory[usersHistory.length - 1] : 0;
+    usersHistory.push(row.active_users ?? 0);
+    if (usersHistory.length > 20) usersHistory.shift();
+    animateNumber(document.getElementById("usersNum"), prev, row.active_users ?? 0);
+    drawSpark();
+  });
+
+  window.addEventListener("resize", drawSpark);
+
+  // ---------- top-pages ----------
+  let pagesWindowKey = null;
+  let pagesMap = {};
+
+  function renderPages() {
+    const body = document.getElementById("pagesBody");
+    const rows = Object.entries(pagesMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    if (rows.length === 0) return;
+
+    const max = rows[0][1];
+    body.innerHTML = "";
+    rows.forEach(([path, hits], i) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="rank">${i + 1}</td>
+        <td class="path" title="${path}">${path}</td>
+        <td class="bar-cell"><span class="pages-track"><span class="pages-fill" style="width:${(hits / max) * 100}%"></span></span></td>
+        <td class="hits">${hits}</td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  connect("top-pages", (row) => {
+    document.getElementById("pagesEmpty").style.display = "none";
+    if (row.window_start !== pagesWindowKey) {
+      pagesWindowKey = row.window_start;
+      pagesMap = {};
+    }
+    pagesMap[row.request] = row.hit_count ?? 0;
+    document.getElementById("pagesWindowTag").textContent = windowLabel(row.window_end);
+    renderPages();
+  });
+
+  // ---------- demo feed ----------
+  function runDemo() {
+    const WINDOW_MS = 10000;
+    const PAGES = [
+      ["/", 0.24], ["/products", 0.19], ["/api/cart", 0.14],
+      ["/search?q=sneakers", 0.11], ["/checkout", 0.08], ["/login", 0.06],
+    ];
+    const jitter = (spread) => 1 + (Math.random() * 2 - 1) * spread;
+    let tick = 0;
+
+    function emitWindow(windowEnd) {
+      tick++;
+      const window_start = new Date(windowEnd - WINDOW_MS).toISOString();
+      const window_end = new Date(windowEnd).toISOString();
+      const request_count = Math.round((1150 + 280 * Math.sin(tick / 4)) * jitter(0.08));
+
+      const statuses = [[200, 0.86], [304, 0.06], [404, 0.05], [500, 0.03 * jitter(0.6)]];
+      statuses.forEach(([status, share]) => {
+        demoHandlers["status-breakdown"]({
+          window_start, window_end, status: String(status),
+          status_count: Math.round(request_count * share),
+        });
+      });
+
+      demoHandlers["request-count"]({ window_start, window_end, request_count });
+      demoHandlers["active-users"]({
+        window_start, window_end,
+        active_users: Math.round(request_count * 0.17 * jitter(0.05)),
+      });
+      PAGES.slice(0, 5).forEach(([request, share]) => {
+        demoHandlers["top-pages"]({
+          window_start, window_end, request,
+          hit_count: Math.round(request_count * share * jitter(0.15)),
+        });
+      });
+    }
+
+    const now = Date.now();
+    for (let i = MAX_HISTORY - 1; i >= 0; i--) emitWindow(now - i * WINDOW_MS);
+    setInterval(() => emitWindow(Date.now()), WINDOW_MS);
+  }
+
+  if (DEMO) runDemo();
+
+})();
+</script>
+</body>
+</html>
